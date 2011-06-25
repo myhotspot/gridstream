@@ -125,13 +125,37 @@ function playIt(req, res) {
                     length = ranges.end - ranges.start;
                     offset = ranges.start;
                 }
-                GridStore.read(db, doc.filename, length, offset,
-                function(err, data) {
-                    res.end(data, 'binary');
-                    GridStore.close(db,
-                    function(err) {
+
+
+                function writeBody(gridStore, data)
+                {
+                    if (gridStore.currentChunk.length() === (gridStore.currentChunk.position + 1))
+                    {
+                        res.end(data, 'binary');
+                    } else {
+                        res.write(data, 'binary');
+                    }
+                }
+
+                new GridStore(db, doc.filename, "r").open(function(err, gridStore) {
+                    if (offset != null) {
+                        gridStore.seek(offset,
+                        function(err, gridStore) {
+                            gridStore.read(length,
+                            function(err, data) {
+                                writeBody(gridStore, data);
+                            });
                         });
+                    } else {
+                        gridStore.read(length,
+                        function(err, data) {
+                            writeBody(gridStore, data);
+                        });
+                    }
                 });
+
+
+
             });
         });
     });

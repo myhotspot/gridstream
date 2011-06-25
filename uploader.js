@@ -4,6 +4,9 @@ Server = require('mongodb').Server,
 GridStore = require('mongodb').GridStore,
 // BSON = require('../lib/mongodb').BSONPure;
 BSON = require('mongodb').BSONNative;
+
+var Q = require('q');
+
 var t = 0;
 
 var fs = require('fs');
@@ -14,43 +17,39 @@ var db1 = new Db('musicBase', new Server('localhost', Connection.DEFAULT_PORT, {
     native_parser: true
 });
 
+function uploadFileToBase(db, filePath, fileNameInDb) {
+    var defer = Q.defer();
+    var gridStore = new GridStore(db, fileNameInDb, "w");
+    gridStore.open(function(err, gridStore) {
+        console.log(fileNameInDb + " opened");
+        if (err) defer.reject(err);
+        var fileData = fs.readFileSync(filePath, 'binary');
+        gridStore.write(fileData,
+        function(err, gridStore) {
+            if (err) defer.reject(err);
+            gridStore.close(function(err, result) {
+                if (err) defer.reject(err);
+                defer.resolve();
+                console.log(fileNameInDb + " closed");
+            });
+        });
+    });
+    return defer.promise;
+}
+
 db1.open(function(err, db) {
-	var fileNum=9;
-    for (var i = fileNum; i < fileNum+1; i++) {
-        var fileIdx = i;
-        var fileName = filesToUpload[i];
-        var readStream = fs.createReadStream(pathToFiles + fileName, {
-            'flags': 'r'
-            ,
-            'encoding': null
-            ,
-            'bufferSize': 1024 * 1024
-        });
-        var gridStore = new GridStore(db, "music" + fileIdx, "w");
-        gridStore.open(function(err, gridStore) {
-            console.log("ERR", err);
-            console.log("music" + gridStore.filename + " opened");
-            readStream.on('data',
-            function(data) {
-                gridStore.write(data,
-                function(err, gridStore) {
-                    console.log("ERR", err);
-                });
-            });
-            readStream.on('end',
+    var defer;
+    var parentDefer = Q.defer();
+    defer = parentDefer;
+    for (var i = 0; i < filesToUpload.length; i++) {
+        var fileName = pathToFiles + filesToUpload[i];
+        (function(i) {
+            defer = Q.when(defer,
             function() {
-                console.log("END");
-                gridStore.close(function(err, result) {
-                    console.log("ERR", err);
-                    console.log(gridStore.filename + " written", result);
-                });
+                return uploadFileToBase(db1, fileName, "music" + i);
             });
-
-        });
-
-        readStream.on('error',
-        function(ex) {
-            console.log("ERROR Reading file.", ex);
-        });
+        })(i);
     };
+    parentDefer.resolve();
+
 });
